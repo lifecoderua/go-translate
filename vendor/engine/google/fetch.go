@@ -20,10 +20,13 @@ func fetch(url string) string {
 }
 
 // Fetch a translated document for the URI given
-func Fetch(path string) string {
+func Fetch(sourceUri string) string {
+	// TODO: hey, we just testing!
+	return fetch(sourceUri)
+
 	sourceLangCode := "en"
 	resultLangCode := "ru"
-	targetURL := translationURL(sourceLangCode, resultLangCode, path)
+	targetURL := translationURL(sourceLangCode, resultLangCode, sourceUri)
 
 	re1 := regexp.MustCompile(`<iframe sandbox="allow-same-origin allow-forms allow-scripts" src="(http://translate.googleusercontent.com/translate_p\?[^"]+)`)
 	matched1 := re1.FindStringSubmatch(fetch(targetURL))[1]
