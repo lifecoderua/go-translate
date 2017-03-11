@@ -22,7 +22,7 @@ func fetch(url string) string {
 // Fetch a translated document for the URI given
 func Fetch(sourceUri string) string {
 	// TODO: hey, we just testing!
-	return fetch(sourceUri)
+	// return fetch(sourceUri)
 
 	sourceLangCode := "en"
 	resultLangCode := "ru"
