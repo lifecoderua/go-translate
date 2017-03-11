@@ -24,12 +24,12 @@ func traverse(n *html.Node, handlers *[]Handler) {
 		for _, handler := range *handlers {
 			if handler.element == "" || n.Data == handler.element {
 				skipHandler := false
-				attr := html.Attribute{}
+				attr := &html.Attribute{}
 				if handler.attr != "" {
-					for _, a := range n.Attr {
+					for i, a := range n.Attr {
 						if a.Key == handler.attr {
 							if handler.attrVal == "" || a.Val == handler.attrVal {
-								attr = a
+								attr = &n.Attr[i]
 							} else {
 								skipHandler = true
 							}
@@ -40,19 +40,11 @@ func traverse(n *html.Node, handlers *[]Handler) {
 				}
 
 				if !skipHandler {
-					handler.handler(n, &attr)
+					// TODO: pass attrIndex || -1 instead
+					handler.handler(n, attr)
 				}
 			}
 		}
-		// switch n.Data {
-		// case "a":
-		// 	for _, a := range n.Attr {
-		// 		if a.Key == "href" {
-		// 			fmt.Println(a.Val)
-		// 			break
-		// 		}
-		// 	}
-		// }
 	}
 
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -65,9 +57,34 @@ func Cleanup(source string) string {
 	// TODO: provide io.Reader instead
 	doc, _ := html.Parse(strings.NewReader(source))
 
+	// TODO: make configurable
+	sourceDomain := "intercom.com"
+
 	handlers := []Handler{
+		// GENERIC
+		// global replacemets
+		// ? tag fixup
+
+		// default fixup
+		// base tag
+		Handler{element: "base", handler: func(n *html.Node, a *html.Attribute) { n.Parent.RemoveChild(n) }},
+
+		// url base replacement
+		Handler{element: "a", attr: "href", handler: func(n *html.Node, a *html.Attribute) {
+			a.Val = regexp.MustCompile("https?://([^./]*.?)"+sourceDomain+"/?").ReplaceAllLiteralString(a.Val, "/")
+		}},
+
+		// ENGINE
+		// iframe
+		// onload
+		// css
+		// scripts
+		// span wrappers
+		// tags
 		Handler{element: "a", attr: "href", handler: func(n *html.Node, a *html.Attribute) { fmt.Println("BOO>> :", n.Data, a.Val) }},
 		Handler{element: "a", attr: "href", attrVal: "/sign_in", handler: func(n *html.Node, a *html.Attribute) { fmt.Println(">> YAY << :", n.Data, a.Val) }},
+		Handler{element: "style", handler: func(n *html.Node, a *html.Attribute) { n.Parent.RemoveChild(n) }},
+		Handler{element: "style", handler: func(n *html.Node, a *html.Attribute) { fmt.Println(">> STYLE << :", n.Data) }},
 	}
 
 	traverse(doc, &handlers)
