@@ -2,13 +2,14 @@ package google
 
 import (
 	"bufio"
-	"fmt"
 	"regexp"
 	"strings"
 
 	"bytes"
 
 	"net/url"
+
+	"fmt"
 
 	"golang.org/x/net/html"
 )
@@ -22,9 +23,9 @@ type Handler struct {
 }
 
 func traverse(n *html.Node, handlers *[]Handler) {
-	if n.Data == "span" {
-		fmt.Println("YAY", n.Type)
-	}
+	// if n.Data == "span" {
+	// 	fmt.Println("YAY", n.Type)
+	// }
 
 	// TODO: our manipulations somehow brakes the traverse (incorrect Next on changes/removal?)
 	// if false && n.Type == html.ElementNode {
@@ -65,8 +66,24 @@ func removeAttr(s []html.Attribute, i int) []html.Attribute {
 	return s[:len(s)-1]
 }
 
+var nodesForRemoval []*html.Node
+
+// schedules node removal to prevent skips on traverse
+func scheduleNodeRemoval(n *html.Node) {
+	nodesForRemoval = append(nodesForRemoval, n)
+}
+
+func removeScheduledNodes() {
+	for i := 0; i < len(nodesForRemoval); i++ {
+		fmt.Println(i, len(nodesForRemoval))
+		n := nodesForRemoval[i]
+		n.Parent.RemoveChild(n)
+	}
+}
+
 // Cleanup a fetched document from the engine-specific markup
 func Cleanup(source string) string {
+	nodesForRemoval = nil
 	// TODO: provide io.Reader instead
 	doc, _ := html.Parse(strings.NewReader(source))
 
@@ -80,7 +97,10 @@ func Cleanup(source string) string {
 
 		// default fixup
 		// base tag
-		Handler{element: "base", handler: func(n *html.Node, attrIndex int) { n.Parent.RemoveChild(n) }},
+		Handler{element: "base", handler: func(n *html.Node, attrIndex int) {
+			// TODO: base removal breaks view heavily without dead requests - to confirm
+			// scheduleNodeRemoval(n)
+		}},
 
 		// href fix
 		// url base replacement
@@ -90,7 +110,6 @@ func Cleanup(source string) string {
 			// href fix
 			if strings.Contains(a.Val, "https://translate.googleusercontent.com/translate") {
 				hrefURL, _ := url.Parse(a.Val)
-				fmt.Println(">>>>", hrefURL.Query())
 				a.Val = hrefURL.Query()["u"][0]
 			}
 
@@ -102,7 +121,7 @@ func Cleanup(source string) string {
 		// iframe
 		Handler{element: "iframe", attr: "src", handler: func(n *html.Node, attrIndex int) {
 			if strings.Contains(n.Attr[attrIndex].Val, "translate.google.com") {
-				n.Parent.RemoveChild(n)
+				scheduleNodeRemoval(n)
 			}
 		}},
 
@@ -117,7 +136,7 @@ func Cleanup(source string) string {
 		// css
 		Handler{element: "style", handler: func(n *html.Node, attrIndex int) {
 			if strings.Contains(n.FirstChild.Data, ".google-src-text") {
-				n.Parent.RemoveChild(n)
+				scheduleNodeRemoval(n)
 			}
 		}},
 
@@ -125,28 +144,32 @@ func Cleanup(source string) string {
 		Handler{element: "script", attr: "src", handler: func(n *html.Node, attrIndex int) {
 			if attrIndex != -1 {
 				if strings.Contains(n.Attr[attrIndex].Val, "translate_c") {
-					n.Parent.RemoveChild(n)
+					scheduleNodeRemoval(n)
 				}
-			}
-
-			if regexp.MustCompile("(_intlStrings|function ti_|_setupIW|performance)").FindStringIndex(n.FirstChild.Data) != nil {
-				n.Parent.RemoveChild(n)
+			} else if regexp.MustCompile("(_intlStrings|function ti_|_setupIW|performance)").FindStringIndex(n.FirstChild.Data) != nil {
+				scheduleNodeRemoval(n)
 			}
 		}},
 
 		// span wrappers
 		// TODO: "span" not located, why?!
-		// Handler{element: "span", attr: "class", attrVal: "notranslate", handler: func(n *html.Node, attrIndex int) {
-		// Handler{element: "span", handler: func(n *html.Node, attrIndex int) {
-		Handler{element: "span", handler: func(n *html.Node, attrIndex int) {
-			fmt.Println("!!!!!", n.Data, n)
-			n.Parent.RemoveChild(n)
-			// n.RemoveChild(n.LastChild)
-			n.Parent.AppendChild(n.LastChild)
+		Handler{element: "span", attr: "class", attrVal: "notranslate", handler: func(n *html.Node, attrIndex int) {
+			// Handler{element: "span", handler: func(n *html.Node, attrIndex int) {
+			// Handler{element: "span", handler: func(n *html.Node, attrIndex int) {
+			// return
+			fmt.Println("!!!!!", n.LastChild)
+			scheduleNodeRemoval(n.FirstChild)
+			n.Attr = []html.Attribute{}
+			// content := html.Node{
+			// 	Data: n.LastChild.Data,
+			// }
+			// n.Parent.AppendChild(&content)
 		}},
 	}
 
 	traverse(doc, &handlers)
+	removeScheduledNodes()
+
 	// iframe(&doc)
 	// onload(&doc)
 	var resBytes []byte
